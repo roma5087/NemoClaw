@@ -209,4 +209,53 @@ describe("prepareProviderDiscovery", () => {
     });
     expect(result.probeOllama).toBe(true);
   });
+
+  it("still probes vLLM non-interactively when only a model was pinned, not a provider (#11367)", () => {
+    // A fresh sandbox with no NEMOCLAW_PROVIDER and nothing recorded to recover
+    // falls back to the synthetic "build" intent key, which does not match any
+    // route-provider key, so guardedProvider/*PreflightPassed stay false here
+    // regardless of this fix; canProbeRoute is the only route-preflight signal
+    // left to gate on for this scenario, so it must allow the probe through.
+    // The key behavior under test is intent.vllm: that key must not be
+    // mistaken for a real, unrelated provider request and must not suppress
+    // the vLLM probe, or an already-running server pinned via
+    // NEMOCLAW_VLLM_MODEL is never detected and onboarding attempts a
+    // redundant install that collides with it on the vLLM port.
+    const result = prepareProviderDiscovery({
+      deps: {
+        ...interactiveDeps,
+        isNonInteractive: () => true,
+        getNonInteractiveProvider: () => null,
+      },
+      sandboxName: "fresh-sandbox",
+      recoverProvider: false,
+      rebuildRegistryInferenceRoute: null,
+      canProbeRoute: () => true,
+      recoverySessionId: null,
+    });
+    expect(result.probeVllm).toBe(true);
+    expect(result.probeOllama).toBe(true);
+  });
+
+  it("still suppresses the vLLM probe without the route-preflight override before this fix's scope (regression guard)", () => {
+    // Documents the remaining, correct gate: with no route-preflight signal
+    // at all (no assertRouteCompatible match, canProbeRoute omitted/false),
+    // a "build"-only intent still does not get the OR-clause override that an
+    // explicit, unrelated provider request also would not get. This fix only
+    // changes intent.vllm/intent.ollama (the AND-clause), not this gate.
+    const result = prepareProviderDiscovery({
+      deps: {
+        ...interactiveDeps,
+        isNonInteractive: () => true,
+        getNonInteractiveProvider: () => null,
+      },
+      sandboxName: "fresh-sandbox",
+      recoverProvider: false,
+      rebuildRegistryInferenceRoute: null,
+      canProbeRoute: () => false,
+      recoverySessionId: null,
+    });
+    expect(result.probeVllm).toBe(false);
+    expect(result.probeOllama).toBe(false);
+  });
 });

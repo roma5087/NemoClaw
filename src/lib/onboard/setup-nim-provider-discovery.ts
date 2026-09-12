@@ -179,7 +179,16 @@ export function prepareProviderDiscovery(options: {
   );
   const providerIntentKey =
     requestedProvider || recoveredProbeKey || (nonInteractive ? "build" : null);
-  const intent = localProviderProbeIntent(providerIntentKey);
+  // Probe intent must come from a genuine requested/recovered provider only.
+  // The synthetic "build" fallback above marks a non-interactive run with no
+  // specific provider hint; it is not itself a provider selection, so it must
+  // not suppress local-daemon probing the way an actual unrelated provider
+  // request (e.g. "openai") correctly does. Otherwise a non-interactive
+  // onboard with only NEMOCLAW_VLLM_MODEL (or NEMOCLAW_OLLAMA_MODEL) set never
+  // probes for an already-running local server and always attempts a fresh
+  // install, even when a compatible server is already up (#11367).
+  const genuineProviderIntentKey = requestedProvider || recoveredProbeKey || null;
+  const intent = localProviderProbeIntent(genuineProviderIntentKey);
   const guardedProvider = localProbeRouteProvider(providerIntentKey);
   if (guardedProvider && assertRouteCompatible) {
     const recoveredModel =
